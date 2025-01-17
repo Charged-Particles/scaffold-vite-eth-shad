@@ -1,8 +1,12 @@
 // Transaction Handlers
-import { handleMintTx } from './mintErc20';
+import { getMintTx, handleMintTx } from './mintErc20';
 
 export const handleTransactionResults = async (txState, eventArgs) => {
   if (txState.txType === 'mint') {
-    await handleMintTx(eventArgs);
+    await handleMintTx({ txState, eventArgs });
   }
+};
+
+export {
+  getMintTx,
 };

@@ -26,7 +26,7 @@ const links = [
   },
 ];
 
-export const Logo = () => {
+export const LogoText = () => {
   return (
     <Stack direction="row" sx={{ width: 300 }}>
       <div className="h-8 w-6 bg-black dark:bg-white rounded-br-lg rounded-tr-sm rounded-tl-lg rounded-bl-sm flex-shrink-0" />
@@ -53,7 +53,7 @@ export const SideMenu = () => {
   const { open } = useSidebar();
   return (
     <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
-      {open ? <Logo /> : <LogoIcon />}
+      {open ? <LogoText /> : <LogoIcon />}
       <div className="mt-8 flex flex-col gap-2">
         {links.map((link, idx) => (
           <SidebarLink key={idx} link={link} className="no-underline" />

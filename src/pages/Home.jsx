@@ -21,14 +21,14 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import LocalAtmIcon from '@mui/icons-material/LocalAtm';
 
 // Aceternity UI
-import { Button } from '../components/ui/button';
-import { EvervaultCard } from '../components/ui/evervault-card';
+import { Button } from '@/components/ui/button';
+import { EvervaultCard } from '@/components/ui/evervault-card';
 
 // App Components
-import SEO from '../components/seo';
-import { getMintTx } from '../txs/mintErc20';
-import { useTransactionContext } from '../contexts/transactions';
-import { connectWallet, disconnectWallet } from '../utils/web3';
+import SEO from '@/components/seo';
+import { getMintTx } from '@/txs';
+import { useTransactionContext } from '@/contexts/transactions';
+import { connectWallet, disconnectWallet } from '@/utils/web3';
 
 // Central Logging
 import { Logger } from '@/utils/logger';

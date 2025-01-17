@@ -16,7 +16,7 @@ export const getMintTx = ({ account, amount, chain }) => {
 };
 
 // Note: called from "src/contexts/transactions.jsx"
-export const handleMintTx = async (eventArgs) => {
+export const handleMintTx = async ({ eventArgs }) => {
   const [ from, to, amount ] = eventArgs.args;
   console.log('Mint Success!', { from, to, amount });
 
