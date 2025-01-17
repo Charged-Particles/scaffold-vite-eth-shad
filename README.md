@@ -1,5 +1,7 @@
 # Carbon v0.1.0
 
+# This is Carbon - Make a Copy
+
 ## Scaffolding for an EVM-based ViteJS Dapp with Shad and Aceternity UI Libraries
 
 - Uses BlockNative Web3-Onboard Wallet Connector

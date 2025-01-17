@@ -11,7 +11,7 @@ import {
 import { isHex, fromHex } from 'viem';
 
 // App Components
-import Logo from '../assets/logo-192x192.png';
+import Logo from '../assets/logo.png';
 import { web3chains } from './web3chains';
 import { GLOBALS } from '@/utils/globals';
 
@@ -93,7 +93,6 @@ export const getChainAsNumber = (chainId) => {
 
 export const connectWallet = async () => {
   const wallets = await web3Onboard.connectWallet();
-  log.debug(wallets);
   return wallets;
 };
 
