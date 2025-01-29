@@ -1,7 +1,7 @@
 // Frameworks
 import React from 'react';
-import { useEffect } from 'react';
-import { useConnectWallet, useSetChain } from '@web3-onboard/react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useAccount, useEnsName, useChainId, useChains } from 'wagmi';
 import _ from 'lodash';
 
 // Material UI
@@ -27,8 +27,10 @@ import { EvervaultCard } from '@/components/ui/evervault-card';
 // App Components
 import SEO from '@/components/seo';
 import { getMintTx } from '@/txs';
+import { getEthBalance } from '@/txs/getEthBalance';
+import { getTokenBalance } from '@/txs/getTokenBalance';
 import { useTransactionContext } from '@/contexts/transactions';
-import { connectWallet, disconnectWallet } from '@/utils/web3';
+import { switchWagmiChain, disconnectWallet } from '@/utils/web3';
 
 // Central Logging
 import { Logger } from '@/utils/logger';
@@ -59,23 +61,42 @@ const AddressChip = styled(Chip)(({ theme }) => ({
 }));
 
 const Home = () => {
-  const [{ wallet, connecting }] = useConnectWallet();
-  const [{ chains, connectedChain, settingChain }, setChain ] = useSetChain();
+  const chainId = useChainId();
+  const chains = useChains();
+  const { address, isConnected } = useAccount();
+  const { data: ensName, isSuccess } = useEnsName({ address, chainId });
+  const [ ethBalance, setEthBalance ] = useState('');
+  const [ tokenBalance, setTokenBalance ] = useState('');
   const [ , , { sendTx }] = useTransactionContext();
+  const lastChainId = useRef();
 
   const handleChainChange = async (event) => {
-    await setChain({ chainId: event.target.value });
+    await switchWagmiChain(event.target.value);
   };
 
-  const getAddressOrEns = () => {
-    return wallet.accounts[0].ens || wallet.accounts[0].uns || wallet.accounts[0].address;
-  };
+  const getAddressOrEns = useMemo(() => {
+    return isSuccess && !!ensName ? ensName : address;
+  }, [ address, ensName, isSuccess ]);
+
+  useEffect(() => {
+    if (chainId !== lastChainId.current) {
+      load();
+    }
+    async function load() {
+      const ethBalance = await getEthBalance({ account: address, chainId, includeSymbol: true });
+      const tokenBalance = await getTokenBalance({ account: address, chainId, includeSymbol: true });
+      if (chainId === lastChainId.current) { return }
+      setEthBalance(ethBalance);
+      setTokenBalance(tokenBalance);
+      lastChainId.current = chainId;
+    }
+  }, [ address, chainId, lastChainId.current, isConnected ]);
 
   const sendTestTransaction = async () => {
     const transaction = getMintTx({
-      account: wallet.accounts[0].address,
+      account: address,
       amount: '1000000000000000000',
-      chain: connectedChain,
+      chainId,
     });
     await sendTx(transaction);
   };
@@ -103,19 +124,19 @@ const Home = () => {
         {/* Wallet Section */}
         <Grid item xs={12}>
           <GradientPaper elevation={0}>
-            {!wallet ? (
+            {!isConnected ? (
               <Stack spacing={2} alignItems="center">
                 <AccountBalanceWalletIcon sx={{ fontSize: 48, color: 'primary.main' }} />
                 <Typography variant="h5" gutterBottom>
                   Connect Your Wallet
                 </Typography>
-                <Button
+                {/* <Button
                   onClick={() => connectWallet()}
                   disabled={connecting}
                   size="lg"
                 >
                   {connecting ? 'Connecting...' : 'Connect Wallet'}
-                </Button>
+                </Button> */}
               </Stack>
             ) : (
               <Stack spacing={3}>
@@ -124,7 +145,7 @@ const Home = () => {
                   <Box>
                     <AddressChip
                       avatar={<><AccountBalanceWalletIcon /></>}
-                      label={getAddressOrEns()}
+                      label={getAddressOrEns}
                       sx={{ width: 'auto', mr: 2, px: 2 }}
                     />
                     <Button
@@ -144,15 +165,11 @@ const Home = () => {
                     Balance
                   </Typography>
                   <Typography variant="h6">
-                    {_.get(wallet.accounts[0], 'balance.ETH', '0.00')} ETH
+                    {ethBalance}
                   </Typography>
-                  {
-                    wallet?.accounts[0].secondaryTokens?.length > 0 && _.map(wallet.accounts[0].secondaryTokens, token => (
-                      <Typography variant="subtitle1" gutterBottom>
-                        {token.balance} {token.name}
-                      </Typography>
-                    ))
-                  }
+                  <Typography variant="subtitle1" gutterBottom>
+                    {tokenBalance}
+                  </Typography>
                 </Box>
 
                 <Box>
@@ -160,14 +177,14 @@ const Home = () => {
                     Network
                   </Typography>
                   <StyledSelect
-                    value={connectedChain?.id || ''}
+                    value={chainId || ''}
                     onChange={handleChainChange}
-                    disabled={settingChain}
+                    // disabled={settingChain}
                     fullWidth
                   >
-                    {chains.map(({ id, label }) => (
+                    {chains.map(({ id, name }) => (
                       <MenuItem key={id} value={id}>
-                        {label}
+                        {name}
                       </MenuItem>
                     ))}
                   </StyledSelect>
