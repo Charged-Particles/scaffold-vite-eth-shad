@@ -4,7 +4,7 @@
 
 ## Scaffolding for an EVM-based ViteJS Dapp with Shad and Aceternity UI Libraries
 
-- Uses BlockNative Web3-Onboard Wallet Connector
+- Uses RainbowKit Wallet Connector
 - Provides Simplified Transaction Handling in a Site-Wide React-Context with LocalStorage-Recapture
 
 *Never lose a transaction again!*
