@@ -1,13 +1,14 @@
 // App Components
-import web3Onboard, { notify } from '@/utils/web3';
-import { GLOBALS } from '@/utils/globals';
+import web3Onboard, { notify, getChainAsNumber } from '@/utils/web3';
+import { web3contracts } from '@/utils/web3config';
 
 export const getMintTx = ({ account, amount, chain }) => {
+  const chainId = getChainAsNumber(chain.id);
   return {
     txType: 'mint',
     txData: {
-      address: GLOBALS.CONTRACTS.ERC20Mintable[chain.id].address,
-      abi: GLOBALS.CONTRACTS.ERC20Mintable[chain.id].abi,
+      address: web3contracts.ERC20Mintable[chainId].address,
+      abi: web3contracts.ERC20Mintable[chainId].abi,
       functionName: 'mint',
       args: [ account, amount ],
     },
@@ -15,9 +16,9 @@ export const getMintTx = ({ account, amount, chain }) => {
   };
 };
 
-// Note: called from "src/contexts/transactions.jsx"
+// Note: called from "src/contexts/transactions.jsx" via "handleTransactionResults()" located in "src/txs/index.js"
 export const handleMintTx = async ({ eventArgs }) => {
-  const [ from, to, amount ] = eventArgs.args;
+  const [ from, to, amount ] = eventArgs;
   console.log('Mint Success!', { from, to, amount });
 
   // TODO: Track TX Results in DB

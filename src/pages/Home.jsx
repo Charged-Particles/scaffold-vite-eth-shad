@@ -125,7 +125,7 @@ const Home = () => {
                     <AddressChip
                       avatar={<><AccountBalanceWalletIcon /></>}
                       label={getAddressOrEns()}
-                      sx={{ width: 400, mr: 2 }}
+                      sx={{ width: 'auto', mr: 2, px: 2 }}
                     />
                     <Button
                       variant="destructive"
@@ -138,7 +138,6 @@ const Home = () => {
                 </Box>
 
                 <Divider sx={{ opacity: 0.7 }} />
-
 
                 <Box>
                   <Typography variant="subtitle2" gutterBottom>

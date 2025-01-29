@@ -25,3 +25,8 @@
 - Web3-Onboard **v2.21.x**
 - Web3-Onboard/Wagmi **v2.2.x**
 - Viem **v2.22.x**
+
+## Commands to Install and Run on Local:
+- nvm use
+- yarn
+- vite

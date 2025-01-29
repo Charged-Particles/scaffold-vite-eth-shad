@@ -12,7 +12,7 @@ import { isHex, fromHex } from 'viem';
 
 // App Components
 import Logo from '../assets/logo.png';
-import { web3chains } from './web3chains';
+import { web3chains } from './web3config';
 import { GLOBALS } from '@/utils/globals';
 
 // Central Logging
