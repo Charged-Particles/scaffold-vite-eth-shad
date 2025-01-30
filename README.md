@@ -1,11 +1,14 @@
-# Carbon v0.1.1
+# Carbon v0.1.2
 
 # This is Carbon - Make a Copy
 
-## Scaffolding for an EVM-based ViteJS Dapp with Shad and Aceternity UI Libraries
+## Scaffolding for an EVM-based ViteJS Dapp using RainbowKit & Shad, Aceternity & Material UI Libraries
 
-- Uses RainbowKit Wallet Connector
-- Provides Simplified Transaction Handling in a Site-Wide React-Context with LocalStorage-Recapture
+- RainbowKit Wallet Connector (Wagmi/Viem)
+- ShadCN + Aceternity + Material UI
+
+## Provides Simplified Transaction Handling in a Site-Wide React-Context with LocalStorage-Recapture
+ - Track TXs over Window Refresh and Wallet or Chain change!
 
 *Never lose a transaction again!*
 
@@ -27,6 +30,6 @@
 - Viem **v2.22.x**
 
 ## Commands to Install and Run on Local:
-- nvm use
-- yarn
-- vite
+1. nvm use
+2. yarn
+3. vite
