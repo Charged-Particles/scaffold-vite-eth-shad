@@ -2,13 +2,13 @@
 import { notify } from '@/utils/web3';
 import { web3contracts } from '@/utils/web3config';
 
-export const getMintTx = ({ account, amount, chainId }) => {
+export const getApproveTokenTx = ({ account, amount, chainId }) => {
   return {
-    txType: 'mint',
+    txType: 'approveErc20',
     txData: {
       address: web3contracts.ERC20Mintable[chainId].address,
       abi: web3contracts.ERC20Mintable[chainId].abi,
-      functionName: 'mint',
+      functionName: 'approve',
       args: [ account, amount ],
     },
     extraData: {},
@@ -16,12 +16,12 @@ export const getMintTx = ({ account, amount, chainId }) => {
 };
 
 // Note: called from "src/contexts/transactions.jsx" via "handleTransactionResults()" located in "src/txs/index.js"
-export const handleMintTx = async ({ txState, eventArgs }) => {
-  const [ from, to, amount ] = eventArgs;
+export const handleApproveTokenTx = async ({ txState, eventArgs }) => {
+  const [ success ] = eventArgs;
 
   // TODO: Track TX Results in DB
-  console.log('Mint Success!', { from, to, amount });
+  console.log('Approve Success!', { success });
 
   // Update UI
-  notify({ type: 'success', message: 'You Minted 1.0 E20M Token!', txHash: txState.txHash });
+  notify({ type: 'success', message: 'Tokens Approved!', txHash: txState.txHash });
 };

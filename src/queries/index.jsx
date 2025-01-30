@@ -1,5 +1,5 @@
 
-import { QueryClient } from 'react-query';
+import { QueryClient } from '@tanstack/react-query';
 
 
 // Singleton for accessing the QueryClient instance

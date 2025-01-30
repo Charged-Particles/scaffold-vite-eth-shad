@@ -1,13 +1,14 @@
 // Frameworks
-import React, { createContext, useContext, useReducer, useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { getAccount, signMessage, simulateContract, writeContract, waitForTransactionReceipt, getTransactionReceipt } from '@web3-onboard/wagmi';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useState, useCallback } from 'react';
+import { useAccountEffect, useAccount, useChainId } from 'wagmi';
+import { signMessage, simulateContract, writeContract, waitForTransactionReceipt, getTransactionReceipt, getAccount, getChainId } from '@wagmi/core';
 import { ContractFunctionRevertedError, BaseError } from 'viem';
-import { useSetChain } from '@web3-onboard/react';
 import { ethers } from 'ethers';
 import _ from 'lodash';
 
 // App Components
-import web3Onboard, { getWalletState, getChainAsNumber, notify } from '@/utils/web3';
+import { getChainAsNumber, notify } from '@/utils/web3';
+import { wagmiConfig } from '@/utils/web3config';
 import useLocalStorage from '@/hooks/useLocalStorage';
 
 // Transaction Handlers
@@ -24,10 +25,12 @@ const initialState = {
   isPending: false,
   isSuccess: false,
   txChainId: 0,
+  txSenderAddress: '',
   txHash: '',
   txReceipt: '',
   extraData: {},
 };
+const lastTxByAddress = {};
 
 export const TransactionContext = createContext(initialState);
 
@@ -44,6 +47,7 @@ const TransactionReducer = (state, action) => {
         isPending: action.payload.isPending,
         isSuccess: false,
         txChainId: action.payload.txChainId,
+        txSenderAddress: action.payload.txSenderAddress,
         txHash: action.payload.txHash,
         txReceipt: '',
         extraData: action.payload.extraData || {},
@@ -51,7 +55,7 @@ const TransactionReducer = (state, action) => {
     case 'TX_END':
       return {
         ...state,
-        isPending: false,
+        ...initialState,
         isSuccess: action.payload.isSuccess,
         txReceipt: action.payload.txReceipt,
       };
@@ -68,14 +72,15 @@ const TransactionReducer = (state, action) => {
 // eslint-disable-next-line react/prop-types
 export default function Provider({ children }) {
   const [ state, dispatch ] = useReducer(TransactionReducer, initialState);
-  const [{ connectedChain }] = useSetChain();
-  const txChainId = getChainAsNumber(connectedChain?.id ?? 0);
+  const { address: txSenderAddress } = getAccount(wagmiConfig);
+  const chainId = useChainId();
+  const txChainId = getChainAsNumber(chainId || 0);
 
   const sendTx = async ({ txType, txData, extraData = {} }) => {
     const txHash = await _sendTransaction(txData);
-    console.log({ txHash });
     dispatch({ type: 'TX_START', payload: {
       txChainId,
+      txSenderAddress,
       txType,
       txHash,
       isPending: true,
@@ -88,6 +93,7 @@ export default function Provider({ children }) {
     const txHash = await _signMessage(txData.message);
     dispatch({ type: 'TX_START', payload: {
       txChainId,
+      txSenderAddress,
       txType,
       txHash,
       isPending: true,
@@ -104,108 +110,139 @@ export default function Provider({ children }) {
 }
 
 export function Updater() {
+  const { address: currentAddress } = useAccount();
+  const chainId = useChainId();
+  const currentChainId = getChainAsNumber(chainId || 0);
   const [ state, dispatch ] = useTransactionContext();
-  const [ lastTx, setLastTx ] = useLocalStorage('lastTx', null);
+  const [ lastTx, setLastTx ] = useLocalStorage(`lastTx-${currentAddress}-${currentChainId}`, null);
   const [ isReady, setIsReady ] = useState(false);
-  const [{ connectedChain }] = useSetChain();
-  const currentChainId = getChainAsNumber(connectedChain?.id ?? 0);
-  const walletState = getWalletState();
   const lastAccount = useRef('');
   const lastHash = useRef('');
 
-  // Wait for Wallet Connection
-  const wallets = web3Onboard.state.select('wallets');
-  const { unsubscribe } = wallets.subscribe((update) => {
-    if (_.isEmpty(update)) { return; }
-    const account = _.first(_.first(update).accounts).address;
-    if (lastAccount.current !== account) {
-      lastAccount.current = account;
-      setIsReady(true);
-    }
+  const _trackLastTx = (address, chainId, state) => {
+    setLastTx(state);
+    lastTxByAddress[`lastTx-${address}-${chainId}`] = state;
+  };
+
+
+  // Wait for Wallet Connection/Disconnection
+  useAccountEffect({
+    config: wagmiConfig,
+    onConnect(data) {
+      if (_.isEmpty(data)) { return; }
+      const account = data.address;
+      if (lastAccount.current !== account) {
+        lastAccount.current = account;
+        setIsReady(true);
+      }
+    },
+    onDisconnect() {
+      lastAccount.current = '';
+      lastHash.current = '';
+      setIsReady(false);
+      dispatch({ type: 'TX_CLEAR' });
+    },
   });
+
+  // Watch for Wallet Change
+  useEffect(() => {
+    if (currentAddress) {
+      if (lastAccount.current !== currentAddress) {
+        lastAccount.current = currentAddress;
+        lastHash.current = '';
+        dispatch({ type: 'TX_CLEAR' });
+
+        const accountLastTx = lastTxByAddress[`lastTx-${currentAddress}-${currentChainId}`];
+        if (accountLastTx) {
+          dispatch({ type: 'TX_START', payload: { ...accountLastTx, isPending: true }});
+        }
+        setIsReady(true);
+      }
+    }
+  }, [ currentAddress, currentChainId ]);
+
 
   // Watch LocalStorage for Transactions and Update State
   useEffect(() => {
     if (!_.isEmpty(lastTx) && _.isEmpty(lastHash.current) && isReady) {
-      console.log('found old tx', lastTx);
-      dispatch({ type: 'TX_START', payload: {
-        txChainId: lastTx.txChainId ?? 1,
-        txType: lastTx.txType,
-        txHash: lastTx.txHash,
-        isPending: true,
-        extraData: lastTx.extraData,
-      } });
+      dispatch({ type: 'TX_START', payload: { ...lastTx, isPending: true }});
     }
-  }, [ lastTx, dispatch, isReady ]);
+  }, [ lastTx, lastHash.current, dispatch, isReady ]);
 
-  // Watch State for Transactions and Handle Results
-  useEffect(() => {
+
+  // Handle Transaction Receipt after Confirmation
+  const _handleTxReceipt = useCallback(({ txState, txReceipt }) => {
+    // Ensure Correct User and Chain
+    const { address: immediateAddress } = getAccount(wagmiConfig);
+    const immediateChainId = getChainId(wagmiConfig);
+    const isCorrectAccount = immediateAddress === txState.txSenderAddress;
+    const isCorrectChain = immediateChainId === txState.txChainId;
+    if (!isReady || !isCorrectAccount || !isCorrectChain) { return; }
+
     (async () => {
-      const _handleTxReceipt = async ({ txReceipt }) => {
-        const isSuccess = txReceipt.status === 'success';
-        dispatch({ type: 'TX_END', payload: { isSuccess, txReceipt } });
-        setLastTx(null);
+      // Dispatch End-of-Tx
+      const isSuccess = txReceipt.status === 'success';
+      dispatch({ type: 'TX_END', payload: { isSuccess, txReceipt } });
+      _trackLastTx(immediateAddress, immediateChainId, null);
 
-        if (isSuccess) {
-          // Parse Event Logs from TX
-          let eventArgs;
-          txReceipt.logs.forEach((evt) => {
-            if (evt.address.toLowerCase() === state.extraData.txData.address.toLowerCase()) {
-              const contractInterface = new ethers.Interface(state.extraData.txData.abi);
-              eventArgs = contractInterface.parseLog(evt);
-            }
-          });
+      if (isSuccess) {
+        // Parse Event Logs from TX
+        let eventArgs;
+        txReceipt.logs.forEach((evt) => {
+          if (evt.address.toLowerCase() === txState.extraData.txData.address.toLowerCase()) {
+            const contractInterface = new ethers.Interface(txState.extraData.txData.abi);
+            eventArgs = contractInterface.parseLog(evt);
+          }
+        });
 
-          // Transaction Handlers
-          await handleTransactionResults(state, eventArgs.args);
-        }
-      };
+        // Transaction Handlers
+        await handleTransactionResults(txState, eventArgs.args);
+      }
+    })();
+  }, [ isReady ]);
+
+
+  // Watch State for Existing Transactions
+  useEffect(() => {
+    const isCorrectAccount = currentAddress === state.txSenderAddress;
+    const isCorrectChain = currentChainId === state.txChainId;
+
+    (async () => {
       try {
-        console.log({ stateTxHash: state.txHash, lastHash: lastHash.current });
-        if (!_.isEmpty(state.txHash) && lastHash.current !== state.txHash && state.txChainId === currentChainId) {
-          console.log('ENTER');
+        if (!_.isEmpty(state.txHash) && lastHash.current !== state.txHash && isReady && isCorrectAccount && isCorrectChain) {
           lastHash.current = state.txHash;
-          setLastTx(state);
-          notify({ type: 'pending', message: 'Transaction submitted', autoDismiss: 3000 });
+          _trackLastTx(currentAddress, currentChainId, state);
 
-          // console.log('Checking for Receipt..');
-          // let txReceipt = await getTransactionReceipt(walletState.wagmiConfig, {
-          //   hash: state.txHash,
-          // });
-          // console.log({ txReceipt });
-
-          console.log('Checking for Receipt..');
-          getTransactionReceipt(walletState.wagmiConfig, { hash: state.txHash })
+          getTransactionReceipt(wagmiConfig, { hash: state.txHash })
             .then((txReceipt) => {
-              console.log({ txReceipt });
+              _handleTxReceipt({ txState: state, txReceipt });
             })
             .catch((err) => {
-              console.log('Waiting for Receipt..');
-              return waitForTransactionReceipt(walletState.wagmiConfig, {
+              return waitForTransactionReceipt(wagmiConfig, {
                 hash: state.txHash,
-                // onReplaced: (replacement) => {
-                //   log.debug(`Transaction replaced: ${replacement}`);
-                //   notify({ type: 'pending', message: 'Transaction replaced', autoDismiss: 3000 });
-                // },
+                onReplaced: (replacement) => {
+                  log.debug('Transaction replaced: ', replacement);
+                  notify({ type: 'pending', message: 'Transaction replaced, watching new transaction..' });
+                },
               })
               .then((txReceipt) => {
-                console.log({ txReceipt });
-                return _handleTxReceipt({ txReceipt });
+                _handleTxReceipt({ txState: state, txReceipt });
               });
             })
             .catch((err) => {
-              console.log({ err });
+              _handleErrors(err);
             });
         }
       } catch (err) {
-        console.log(err);
+        _handleErrors(err);
       }
     })();
   }, [
     state,
     dispatch,
-    setLastTx,
-    walletState,
+    isReady,
+    currentChainId,
+    currentAddress,
   ]);
 
   return () => {
@@ -215,10 +252,10 @@ export function Updater() {
 
 async function _sendTransaction(txData) {
   try {
-    const walletState = getWalletState();
-    const [ activeWallet ] = walletState.wallets;
-    const { request } = await simulateContract(walletState.wagmiConfig, { ...txData, connector: activeWallet.wagmiConnector });
-    return await writeContract(walletState.wagmiConfig, request);
+    const { request } = await simulateContract(wagmiConfig, { ...txData });
+    const result = await writeContract(wagmiConfig, request);
+    notify({ type: 'pending', message: 'Transaction submitted' });
+    return result;
   } catch (err) {
     _handleErrors(err);
   }
@@ -226,12 +263,9 @@ async function _sendTransaction(txData) {
 
 async function _signMessage(msg) {
   try {
-    const walletState = getWalletState();
-    const [ activeWallet ] = walletState.wallets;
-    return await signMessage(walletState.wagmiConfig, {
-      message: msg,
-      connector: activeWallet.wagmiConnector,
-    });
+    const result = await signMessage(wagmiConfig, { message: msg });
+    notify({ type: 'pending', message: 'Signature submitted' });
+    return result;
   } catch (err) {
     _handleErrors(err);
   }
@@ -240,14 +274,14 @@ async function _signMessage(msg) {
 function _handleErrors(err) {
   console.log(err);
   if (err?.cause?.code === 4001) {
-    notify({ type: 'error', message: 'Transaction rejected by user', autoDismiss: 3000 });
+    notify({ type: 'error', message: 'Transaction rejected by user' });
   } else if (err instanceof BaseError) {
     const revertError = err.walk(err => err instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
       const errorName = revertError.data?.errorName ?? '';
-      notify({ type: 'error', message: 'Transaction failed: ' + errorName, autoDismiss: 3000 });
+      notify({ type: 'error', message: 'Transaction failed: ' + errorName });
     }
   } else {
-    notify({ type: 'error', message: 'Transaction failed', autoDismiss: 3000 });
+    notify({ type: 'error', message: 'Transaction failed' });
   }
 }

@@ -1,5 +1,6 @@
 // Frameworks
 import React, { useState } from 'react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { cn } from '@/utils/cn';
 
 // App Components
@@ -23,8 +24,15 @@ function AppLayout({ location, children }) {
             <SideMenu />
           </SidebarBody>
         </Sidebar>
-        <div style={{ background: 'linear-gradient(45deg, #3a3a3a 0%, #1a1a1a 100%)' }} className="flex flex-1 overflow-y-scroll md:overflow-hidden rounded-tl-2xl border border-r-0 border-b-0 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+        <div style={{ background: 'linear-gradient(45deg, #3a3a3a 0%, #2a2a34 100%)' }} className="flex flex-1 overflow-y-scroll md:overflow-hidden rounded-tl-2xl border border-r-0 border-b-0 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
           <div className="p-2 md:p-10 flex flex-col gap-2 flex-1 w-full h-full md:overflow-y-scroll">
+            <div className="flex justify-end">
+              <ConnectButton
+                chainStatus="icon"
+                showBalance={false}
+                accountStatus="address"
+              />
+            </div>
             {children}
           </div>
         </div>

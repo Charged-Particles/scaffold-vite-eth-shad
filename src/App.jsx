@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { Router } from '@reach/router';
 
 // React-Query
-import { QueryClientProvider } from 'react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 // import { ReactQueryDevtools } from 'react-query/devtools';
 import ReactQueryClient from '@/queries';
 
@@ -14,9 +14,15 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import '@/layout/styles/overrides.css';
 
-// Blocknative Web3 Onboard
-import { Web3OnboardProvider } from '@web3-onboard/react';
-import web3Onboard from '@/utils/web3';
+// Rainbow Kit
+import '@rainbow-me/rainbowkit/styles.css';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
+import { WagmiProvider } from 'wagmi';
+import { wagmiConfig } from '@/utils/web3config';
+
+// Toasify
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Data Contexts
 import TxContextProvider, { Updater as TxContextUpdater } from '@/contexts/transactions';
@@ -44,14 +50,17 @@ function AppRoutes() {
 
 function AppContexts({ children }) {
   return (
-    <Web3OnboardProvider web3Onboard={web3Onboard}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={ReactQueryClient.instance()}>
-        <TxContextProvider>
-          {children}
-        </TxContextProvider>
+        <RainbowKitProvider theme={darkTheme()}>
+          <TxContextProvider>
+            {children}
+          </TxContextProvider>
+          <ToastContainer />
+        </RainbowKitProvider>
         {/* <ReactQueryDevtools initialIsOpen={false} /> */}
       </QueryClientProvider>
-    </Web3OnboardProvider>
+    </WagmiProvider>
   );
 }
 
