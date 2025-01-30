@@ -2,7 +2,7 @@
 
 # This is Carbon - Make a Copy
 
-## Scaffolding for an EVM-based ViteJS Dapp using RainbowKit & Shad, Aceternity & Material UI Libraries
+## Scaffolding for an EVM-based ViteJS Dapp using RainbowKit Wallet Manager and ShadCN, Aceternity & Material UI Libraries
 
 - RainbowKit Wallet Connector (Wagmi/Viem)
 - ShadCN + Aceternity + Material UI
