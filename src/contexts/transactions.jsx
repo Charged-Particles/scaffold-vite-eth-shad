@@ -30,6 +30,7 @@ const initialState = {
   txReceipt: '',
   extraData: {},
 };
+const lastTxByAddress = {};
 
 export const TransactionContext = createContext(initialState);
 
@@ -54,7 +55,7 @@ const TransactionReducer = (state, action) => {
     case 'TX_END':
       return {
         ...state,
-        isPending: false,
+        ...initialState,
         isSuccess: action.payload.isSuccess,
         txReceipt: action.payload.txReceipt,
       };
@@ -109,14 +110,20 @@ export default function Provider({ children }) {
 }
 
 export function Updater() {
-  const [ state, dispatch ] = useTransactionContext();
-  const [ lastTx, setLastTx ] = useLocalStorage('lastTx', null);
-  const [ isReady, setIsReady ] = useState(false);
   const { address: currentAddress } = useAccount();
   const chainId = useChainId();
   const currentChainId = getChainAsNumber(chainId || 0);
+  const [ state, dispatch ] = useTransactionContext();
+  const [ lastTx, setLastTx ] = useLocalStorage(`lastTx-${currentAddress}-${currentChainId}`, null);
+  const [ isReady, setIsReady ] = useState(false);
   const lastAccount = useRef('');
   const lastHash = useRef('');
+
+  const _trackLastTx = (address, chainId, state) => {
+    setLastTx(state);
+    lastTxByAddress[`lastTx-${address}-${chainId}`] = state;
+  };
+
 
   // Wait for Wallet Connection/Disconnection
   useAccountEffect({
@@ -133,6 +140,7 @@ export function Updater() {
       lastAccount.current = '';
       lastHash.current = '';
       setIsReady(false);
+      dispatch({ type: 'TX_CLEAR' });
     },
   });
 
@@ -142,55 +150,57 @@ export function Updater() {
       if (lastAccount.current !== currentAddress) {
         lastAccount.current = currentAddress;
         lastHash.current = '';
+        dispatch({ type: 'TX_CLEAR' });
+
+        const accountLastTx = lastTxByAddress[`lastTx-${currentAddress}-${currentChainId}`];
+        if (accountLastTx) {
+          dispatch({ type: 'TX_START', payload: { ...accountLastTx, isPending: true }});
+        }
         setIsReady(true);
       }
     }
-  }, [ currentAddress ]);
+  }, [ currentAddress, currentChainId ]);
+
 
   // Watch LocalStorage for Transactions and Update State
   useEffect(() => {
     if (!_.isEmpty(lastTx) && _.isEmpty(lastHash.current) && isReady) {
-      dispatch({ type: 'TX_START', payload: {
-        txChainId: lastTx.txChainId ?? 1,
-        txSenderAddress: lastTx.txSenderAddress,
-        txType: lastTx.txType,
-        txHash: lastTx.txHash,
-        isPending: true,
-        extraData: lastTx.extraData,
-      } });
+      dispatch({ type: 'TX_START', payload: { ...lastTx, isPending: true }});
     }
-  }, [ lastTx, dispatch, isReady ]);
+  }, [ lastTx, lastHash.current, dispatch, isReady ]);
+
 
   // Handle Transaction Receipt after Confirmation
-  const _handleTxReceipt = useCallback(({ txReceipt }) => {
+  const _handleTxReceipt = useCallback(({ txState, txReceipt }) => {
     // Ensure Correct User and Chain
     const { address: immediateAddress } = getAccount(wagmiConfig);
     const immediateChainId = getChainId(wagmiConfig);
-    const isCorrectAccount = immediateAddress === state.txSenderAddress;
-    const isCorrectChain = immediateChainId === state.txChainId;
+    const isCorrectAccount = immediateAddress === txState.txSenderAddress;
+    const isCorrectChain = immediateChainId === txState.txChainId;
     if (!isReady || !isCorrectAccount || !isCorrectChain) { return; }
 
     (async () => {
       // Dispatch End-of-Tx
       const isSuccess = txReceipt.status === 'success';
       dispatch({ type: 'TX_END', payload: { isSuccess, txReceipt } });
-      setLastTx(null);
+      _trackLastTx(immediateAddress, immediateChainId, null);
 
       if (isSuccess) {
         // Parse Event Logs from TX
         let eventArgs;
         txReceipt.logs.forEach((evt) => {
-          if (evt.address.toLowerCase() === state.extraData.txData.address.toLowerCase()) {
-            const contractInterface = new ethers.Interface(state.extraData.txData.abi);
+          if (evt.address.toLowerCase() === txState.extraData.txData.address.toLowerCase()) {
+            const contractInterface = new ethers.Interface(txState.extraData.txData.abi);
             eventArgs = contractInterface.parseLog(evt);
           }
         });
 
         // Transaction Handlers
-        await handleTransactionResults(state, eventArgs.args);
+        await handleTransactionResults(txState, eventArgs.args);
       }
     })();
-  }, [ isReady, state, currentAddress, currentChainId ]);
+  }, [ isReady ]);
+
 
   // Watch State for Existing Transactions
   useEffect(() => {
@@ -201,11 +211,11 @@ export function Updater() {
       try {
         if (!_.isEmpty(state.txHash) && lastHash.current !== state.txHash && isReady && isCorrectAccount && isCorrectChain) {
           lastHash.current = state.txHash;
-          setLastTx(state);
+          _trackLastTx(currentAddress, currentChainId, state);
 
           getTransactionReceipt(wagmiConfig, { hash: state.txHash })
             .then((txReceipt) => {
-              _handleTxReceipt({ txReceipt });
+              _handleTxReceipt({ txState: state, txReceipt });
             })
             .catch((err) => {
               return waitForTransactionReceipt(wagmiConfig, {
@@ -216,7 +226,7 @@ export function Updater() {
                 },
               })
               .then((txReceipt) => {
-                _handleTxReceipt({ txReceipt });
+                _handleTxReceipt({ txState: state, txReceipt });
               });
             })
             .catch((err) => {
@@ -230,7 +240,6 @@ export function Updater() {
   }, [
     state,
     dispatch,
-    setLastTx,
     isReady,
     currentChainId,
     currentAddress,
