@@ -122,7 +122,7 @@ const Home = () => {
   }, []);
 
   return (
-    <main style={{ width: '100%', minHeight: '100vh', background: 'linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%)' }}>
+    <main style={{ width: '100%', minHeight: '100vh' }}>
       <SEO title={'Home'} />
 
       <Container maxWidth="lg" sx={{ py: 4 }}>
