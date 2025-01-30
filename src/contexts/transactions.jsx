@@ -117,6 +117,7 @@ export function Updater() {
   const [ lastTx, setLastTx ] = useLocalStorage(`lastTx-${currentAddress}-${currentChainId}`, null);
   const [ isReady, setIsReady ] = useState(false);
   const lastAccount = useRef('');
+  const lastChainId = useRef('');
   const lastHash = useRef('');
 
   const _trackLastTx = (address, chainId, state) => {
@@ -144,11 +145,12 @@ export function Updater() {
     },
   });
 
-  // Watch for Wallet Change
+  // Watch for Wallet/Chain Change
   useEffect(() => {
-    if (currentAddress) {
-      if (lastAccount.current !== currentAddress) {
+    if (currentAddress && currentChainId) {
+      if (lastAccount.current !== currentAddress || lastChainId.current != currentChainId) {
         lastAccount.current = currentAddress;
+        lastChainId.current = currentChainId;
         lastHash.current = '';
         dispatch({ type: 'TX_CLEAR' });
 
