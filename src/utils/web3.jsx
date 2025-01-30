@@ -54,5 +54,3 @@ export const notify = ({ message, txHash = '' }) => {
     </Box>
   );
 };
-
-// export default wagmiConfig;

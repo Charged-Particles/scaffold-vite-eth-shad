@@ -16,7 +16,7 @@ import '@/layout/styles/overrides.css';
 
 // Rainbow Kit
 import '@rainbow-me/rainbowkit/styles.css';
-import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
 import { wagmiConfig } from '@/utils/web3config';
 
@@ -52,7 +52,7 @@ function AppContexts({ children }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={ReactQueryClient.instance()}>
-        <RainbowKitProvider>
+        <RainbowKitProvider theme={darkTheme()}>
           <TxContextProvider>
             {children}
           </TxContextProvider>

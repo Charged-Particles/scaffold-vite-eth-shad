@@ -1,7 +1,7 @@
 // Frameworks
-import React, { createContext, useContext, useReducer, useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { useAccountEffect, useChainId } from 'wagmi';
-import { signMessage, simulateContract, writeContract, waitForTransactionReceipt, getTransactionReceipt } from '@wagmi/core';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useState, useCallback } from 'react';
+import { useAccountEffect, useAccount, useChainId } from 'wagmi';
+import { signMessage, simulateContract, writeContract, waitForTransactionReceipt, getTransactionReceipt, getAccount, getChainId } from '@wagmi/core';
 import { ContractFunctionRevertedError, BaseError } from 'viem';
 import { ethers } from 'ethers';
 import _ from 'lodash';
@@ -25,6 +25,7 @@ const initialState = {
   isPending: false,
   isSuccess: false,
   txChainId: 0,
+  txSenderAddress: '',
   txHash: '',
   txReceipt: '',
   extraData: {},
@@ -45,6 +46,7 @@ const TransactionReducer = (state, action) => {
         isPending: action.payload.isPending,
         isSuccess: false,
         txChainId: action.payload.txChainId,
+        txSenderAddress: action.payload.txSenderAddress,
         txHash: action.payload.txHash,
         txReceipt: '',
         extraData: action.payload.extraData || {},
@@ -69,6 +71,7 @@ const TransactionReducer = (state, action) => {
 // eslint-disable-next-line react/prop-types
 export default function Provider({ children }) {
   const [ state, dispatch ] = useReducer(TransactionReducer, initialState);
+  const { address: txSenderAddress } = getAccount(wagmiConfig);
   const chainId = useChainId();
   const txChainId = getChainAsNumber(chainId || 0);
 
@@ -76,6 +79,7 @@ export default function Provider({ children }) {
     const txHash = await _sendTransaction(txData);
     dispatch({ type: 'TX_START', payload: {
       txChainId,
+      txSenderAddress,
       txType,
       txHash,
       isPending: true,
@@ -88,6 +92,7 @@ export default function Provider({ children }) {
     const txHash = await _signMessage(txData.message);
     dispatch({ type: 'TX_START', payload: {
       txChainId,
+      txSenderAddress,
       txType,
       txHash,
       isPending: true,
@@ -107,12 +112,13 @@ export function Updater() {
   const [ state, dispatch ] = useTransactionContext();
   const [ lastTx, setLastTx ] = useLocalStorage('lastTx', null);
   const [ isReady, setIsReady ] = useState(false);
+  const { address: currentAddress } = useAccount();
   const chainId = useChainId();
   const currentChainId = getChainAsNumber(chainId || 0);
   const lastAccount = useRef('');
   const lastHash = useRef('');
 
-  // Wait for Wallet Connection
+  // Wait for Wallet Connection/Disconnection
   useAccountEffect({
     config: wagmiConfig,
     onConnect(data) {
@@ -123,16 +129,30 @@ export function Updater() {
         setIsReady(true);
       }
     },
-    // onDisconnect() {
-    //   console.log('Disconnected!')
-    // },
+    onDisconnect() {
+      lastAccount.current = '';
+      lastHash.current = '';
+      setIsReady(false);
+    },
   });
+
+  // Watch for Wallet Change
+  useEffect(() => {
+    if (currentAddress) {
+      if (lastAccount.current !== currentAddress) {
+        lastAccount.current = currentAddress;
+        lastHash.current = '';
+        setIsReady(true);
+      }
+    }
+  }, [ currentAddress ]);
 
   // Watch LocalStorage for Transactions and Update State
   useEffect(() => {
     if (!_.isEmpty(lastTx) && _.isEmpty(lastHash.current) && isReady) {
       dispatch({ type: 'TX_START', payload: {
         txChainId: lastTx.txChainId ?? 1,
+        txSenderAddress: lastTx.txSenderAddress,
         txType: lastTx.txType,
         txHash: lastTx.txHash,
         isPending: true,
@@ -141,48 +161,62 @@ export function Updater() {
     }
   }, [ lastTx, dispatch, isReady ]);
 
-  // Watch State for Transactions and Handle Results
-  useEffect(() => {
+  // Handle Transaction Receipt after Confirmation
+  const _handleTxReceipt = useCallback(({ txReceipt }) => {
+    // Ensure Correct User and Chain
+    const { address: immediateAddress } = getAccount(wagmiConfig);
+    const immediateChainId = getChainId(wagmiConfig);
+    const isCorrectAccount = immediateAddress === state.txSenderAddress;
+    const isCorrectChain = immediateChainId === state.txChainId;
+    if (!isReady || !isCorrectAccount || !isCorrectChain) { return; }
+
     (async () => {
-      const _handleTxReceipt = async ({ txReceipt }) => {
-        const isSuccess = txReceipt.status === 'success';
-        dispatch({ type: 'TX_END', payload: { isSuccess, txReceipt } });
-        setLastTx(null);
+      // Dispatch End-of-Tx
+      const isSuccess = txReceipt.status === 'success';
+      dispatch({ type: 'TX_END', payload: { isSuccess, txReceipt } });
+      setLastTx(null);
 
-        if (isSuccess) {
-          // Parse Event Logs from TX
-          let eventArgs;
-          txReceipt.logs.forEach((evt) => {
-            if (evt.address.toLowerCase() === state.extraData.txData.address.toLowerCase()) {
-              const contractInterface = new ethers.Interface(state.extraData.txData.abi);
-              eventArgs = contractInterface.parseLog(evt);
-            }
-          });
+      if (isSuccess) {
+        // Parse Event Logs from TX
+        let eventArgs;
+        txReceipt.logs.forEach((evt) => {
+          if (evt.address.toLowerCase() === state.extraData.txData.address.toLowerCase()) {
+            const contractInterface = new ethers.Interface(state.extraData.txData.abi);
+            eventArgs = contractInterface.parseLog(evt);
+          }
+        });
 
-          // Transaction Handlers
-          await handleTransactionResults(state, eventArgs.args);
-        }
-      };
+        // Transaction Handlers
+        await handleTransactionResults(state, eventArgs.args);
+      }
+    })();
+  }, [ isReady, state, currentAddress, currentChainId ]);
+
+  // Watch State for Existing Transactions
+  useEffect(() => {
+    const isCorrectAccount = currentAddress === state.txSenderAddress;
+    const isCorrectChain = currentChainId === state.txChainId;
+
+    (async () => {
       try {
-        if (!_.isEmpty(state.txHash) && lastHash.current !== state.txHash && state.txChainId === currentChainId) {
+        if (!_.isEmpty(state.txHash) && lastHash.current !== state.txHash && isReady && isCorrectAccount && isCorrectChain) {
           lastHash.current = state.txHash;
           setLastTx(state);
-          notify({ type: 'pending', message: 'Transaction submitted' });
 
           getTransactionReceipt(wagmiConfig, { hash: state.txHash })
             .then((txReceipt) => {
-              return _handleTxReceipt({ txReceipt });
+              _handleTxReceipt({ txReceipt });
             })
             .catch((err) => {
               return waitForTransactionReceipt(wagmiConfig, {
                 hash: state.txHash,
                 onReplaced: (replacement) => {
                   log.debug('Transaction replaced: ', replacement);
-                  notify({ type: 'pending', message: 'Transaction replaced' });
+                  notify({ type: 'pending', message: 'Transaction replaced, watching new transaction..' });
                 },
               })
               .then((txReceipt) => {
-                return _handleTxReceipt({ txReceipt });
+                _handleTxReceipt({ txReceipt });
               });
             })
             .catch((err) => {
@@ -197,6 +231,9 @@ export function Updater() {
     state,
     dispatch,
     setLastTx,
+    isReady,
+    currentChainId,
+    currentAddress,
   ]);
 
   return () => {
@@ -207,7 +244,9 @@ export function Updater() {
 async function _sendTransaction(txData) {
   try {
     const { request } = await simulateContract(wagmiConfig, { ...txData });
-    return await writeContract(wagmiConfig, request);
+    const result = await writeContract(wagmiConfig, request);
+    notify({ type: 'pending', message: 'Transaction submitted' });
+    return result;
   } catch (err) {
     _handleErrors(err);
   }
@@ -215,7 +254,9 @@ async function _sendTransaction(txData) {
 
 async function _signMessage(msg) {
   try {
-    return await signMessage(wagmiConfig, { message: msg });
+    const result = await signMessage(wagmiConfig, { message: msg });
+    notify({ type: 'pending', message: 'Signature submitted' });
+    return result;
   } catch (err) {
     _handleErrors(err);
   }

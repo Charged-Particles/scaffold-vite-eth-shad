@@ -26,9 +26,7 @@ import { EvervaultCard } from '@/components/ui/evervault-card';
 
 // App Components
 import SEO from '@/components/seo';
-import { getMintTx } from '@/txs';
-import { getEthBalance } from '@/txs/getEthBalance';
-import { getTokenBalance } from '@/txs/getTokenBalance';
+import { getMintTx, getEthBalance, getTokenBalance } from '@/txs';
 import { useTransactionContext } from '@/contexts/transactions';
 import { switchWagmiChain, disconnectWallet } from '@/utils/web3';
 
@@ -79,7 +77,7 @@ const Home = () => {
   }, [ address, ensName, isSuccess ]);
 
   useEffect(() => {
-    if (chainId !== lastChainId.current) {
+    if (address && chainId !== lastChainId.current) {
       load();
     }
     async function load() {
