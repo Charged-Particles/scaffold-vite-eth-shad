@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useState, useCallback } from 'react';
 import { useAccountEffect, useAccount, useChainId } from 'wagmi';
 import { signMessage, simulateContract, writeContract, waitForTransactionReceipt, getTransactionReceipt, getAccount, getChainId } from '@wagmi/core';
-import { ContractFunctionRevertedError, BaseError } from 'viem';
+import { ContractFunctionRevertedError, ContractFunctionExecutionError, BaseError } from 'viem';
 import { ethers } from 'ethers';
 import _ from 'lodash';
 
@@ -34,7 +34,7 @@ const lastTxByAddress = {};
 
 export const TransactionContext = createContext(initialState);
 
-export function useTransactionContext() {
+export const useTransactionContext = () => {
   return useContext(TransactionContext);
 }
 
@@ -76,34 +76,38 @@ export default function Provider({ children }) {
   const chainId = useChainId();
   const txChainId = getChainAsNumber(chainId || 0);
 
-  const sendTx = async ({ txType, txData, extraData = {} }) => {
+  const sendTx = async ({ txType, txData, dbData = {} }) => {
     const txHash = await _sendTransaction(txData);
-    dispatch({ type: 'TX_START', payload: {
-      txChainId,
-      txSenderAddress,
-      txType,
-      txHash,
-      isPending: true,
-      extraData: { txData, ...extraData },
-    } });
+    if (!_.isEmpty(txHash)) {
+      dispatch({ type: 'TX_START', payload: {
+        txChainId,
+        txSenderAddress,
+        txType,
+        txHash,
+        isPending: true,
+        extraData: { txData, dbData },
+      } });
+    }
     return txHash;
   };
 
-  const signMsg = async ({ txType, txData, extraData = {} }) => {
+  const signMsg = async ({ txType, txData, dbData = {} }) => {
     const txHash = await _signMessage(txData.message);
-    dispatch({ type: 'TX_START', payload: {
-      txChainId,
-      txSenderAddress,
-      txType,
-      txHash,
-      isPending: true,
-      extraData: { txData, ...extraData },
-    } });
+    if (!_.isEmpty(txHash)) {
+      dispatch({ type: 'TX_START', payload: {
+        txChainId,
+        txSenderAddress,
+        txType,
+        txHash,
+        isPending: true,
+        extraData: { txData, dbData },
+      } });
+    }
     return txHash;
   };
 
   return (
-    <TransactionContext.Provider value={[ state, dispatch, { sendTx, signMsg }]}>
+    <TransactionContext.Provider value={[ state, dispatch, { sendTx, signMsg } ]}>
       {children}
     </TransactionContext.Provider>
   );
@@ -120,11 +124,10 @@ export function Updater() {
   const lastChainId = useRef('');
   const lastHash = useRef('');
 
-  const _trackLastTx = (address, chainId, state) => {
+  const _trackLastTx = useCallback((address, chainId, state) => {
     setLastTx(state);
     lastTxByAddress[`lastTx-${address}-${chainId}`] = state;
-  };
-
+  }, [ setLastTx ]);
 
   // Wait for Wallet Connection/Disconnection
   useAccountEffect({
@@ -148,7 +151,7 @@ export function Updater() {
   // Watch for Wallet/Chain Change
   useEffect(() => {
     if (currentAddress && currentChainId) {
-      if (lastAccount.current !== currentAddress || lastChainId.current != currentChainId) {
+      if (lastAccount.current !== currentAddress || lastChainId.current !== currentChainId) {
         lastAccount.current = currentAddress;
         lastChainId.current = currentChainId;
         lastHash.current = '';
@@ -161,15 +164,14 @@ export function Updater() {
         setIsReady(true);
       }
     }
-  }, [ currentAddress, currentChainId ]);
-
+  }, [ dispatch, currentAddress, currentChainId ]);
 
   // Watch LocalStorage for Transactions and Update State
   useEffect(() => {
     if (!_.isEmpty(lastTx) && _.isEmpty(lastHash.current) && isReady) {
       dispatch({ type: 'TX_START', payload: { ...lastTx, isPending: true }});
     }
-  }, [ lastTx, lastHash.current, dispatch, isReady ]);
+  }, [ lastTx, lastHash, dispatch, isReady ]);
 
 
   // Handle Transaction Receipt after Confirmation
@@ -189,11 +191,15 @@ export function Updater() {
 
       if (isSuccess) {
         // Parse Event Logs from TX
-        let eventArgs;
+        let eventArgs = { args: {} };
         txReceipt.logs.forEach((evt) => {
           if (evt.address.toLowerCase() === txState.extraData.txData.address.toLowerCase()) {
-            const contractInterface = new ethers.Interface(txState.extraData.txData.abi);
-            eventArgs = contractInterface.parseLog(evt);
+            try {
+              const contractInterface = new ethers.utils.Interface(txState.extraData.txData.abi);
+              eventArgs = contractInterface.parseLog(evt);
+            } catch (e) {
+              eventArgs = { args: {} };
+            }
           }
         });
 
@@ -201,7 +207,7 @@ export function Updater() {
         await handleTransactionResults(txState, eventArgs.args);
       }
     })();
-  }, [ isReady ]);
+  }, [ isReady, dispatch, _trackLastTx ]);
 
 
   // Watch State for Existing Transactions
@@ -219,7 +225,7 @@ export function Updater() {
             .then((txReceipt) => {
               _handleTxReceipt({ txState: state, txReceipt });
             })
-            .catch((err) => {
+            .catch(() => {
               return waitForTransactionReceipt(wagmiConfig, {
                 hash: state.txHash,
                 onReplaced: (replacement) => {
@@ -232,11 +238,11 @@ export function Updater() {
               });
             })
             .catch((err) => {
-              _handleErrors(err);
+              _handleErrors(err, dispatch);
             });
         }
       } catch (err) {
-        _handleErrors(err);
+        _handleErrors(err, dispatch);
       }
     })();
   }, [
@@ -245,17 +251,16 @@ export function Updater() {
     isReady,
     currentChainId,
     currentAddress,
+    _handleTxReceipt,
+    _trackLastTx,
   ]);
-
-  return () => {
-    unsubscribe();
-  };
 }
 
 async function _sendTransaction(txData) {
   try {
     const { request } = await simulateContract(wagmiConfig, { ...txData });
     const result = await writeContract(wagmiConfig, request);
+    notify({ type: 'close' });
     notify({ type: 'pending', message: 'Transaction submitted' });
     return result;
   } catch (err) {
@@ -266,6 +271,7 @@ async function _sendTransaction(txData) {
 async function _signMessage(msg) {
   try {
     const result = await signMessage(wagmiConfig, { message: msg });
+    notify({ type: 'close' });
     notify({ type: 'pending', message: 'Signature submitted' });
     return result;
   } catch (err) {
@@ -273,17 +279,26 @@ async function _signMessage(msg) {
   }
 }
 
-function _handleErrors(err) {
+function _handleErrors(err, dispatch = _.noop) {
   console.log(err);
   if (err?.cause?.code === 4001) {
-    notify({ type: 'error', message: 'Transaction rejected by user' });
+    notify({ type: 'warning', message: 'Transaction rejected by user' });
+    dispatch({ type: 'TX_CLEAR' });
   } else if (err instanceof BaseError) {
     const revertError = err.walk(err => err instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
-      const errorName = revertError.data?.errorName ?? '';
+      const errorName = revertError.shortMessage ?? '';
       notify({ type: 'error', message: 'Transaction failed: ' + errorName });
+    } else {
+      const execError = err.walk(err => err instanceof ContractFunctionExecutionError);
+      if (execError instanceof ContractFunctionExecutionError) {
+        const errorName = execError.shortMessage ?? '';
+        notify({ type: 'error', message: 'Transaction failed: ' + errorName });
+      } else {
+        notify({ type: 'error', message: 'Transaction failed. Please see console for details.' });
+      }
     }
   } else {
-    notify({ type: 'error', message: 'Transaction failed' });
+    notify({ type: 'error', message: 'Transaction failed. Please see console for details.' });
   }
 }

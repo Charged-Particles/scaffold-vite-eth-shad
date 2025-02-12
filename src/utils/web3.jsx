@@ -40,9 +40,14 @@ export const switchWagmiChain = async (chainId) => {
 };
 
 export const notify = ({ message, txHash = '' }) => {
+  if (type === 'close') {
+    toast.dismiss();
+    return;
+  }
   const { chain } = getAccount(wagmiConfig);
   const blockExplorer = _.get(chain, 'blockExplorers.default.url', '');
-  toast.success(
+  const toaster = type === 'pending' ? toast.info : (type === 'error' ? toast.error : (type === 'warning' ? toast.warn : toast.success));
+  toaster(
     <Box>
       <Typography>{message}</Typography>
       {txHash.length > 0 && (

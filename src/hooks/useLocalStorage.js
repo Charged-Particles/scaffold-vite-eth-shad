@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import bigNumberify from 'bignumberify';
 
 const useLocalStorage = (key, initialValue) => {
   // State to store our value
@@ -6,7 +7,7 @@ const useLocalStorage = (key, initialValue) => {
   const [storedValue, setStoredValue] = useState(() => {
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      return item ? JSON.parse(item, bigNumberify) : initialValue;
     } catch (error) {
       console.error(`Error reading localStorage key "${key}":`, error);
       return initialValue;
@@ -19,7 +20,7 @@ const useLocalStorage = (key, initialValue) => {
       // Allow value to be a function so we have same API as useState
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      window.localStorage.setItem(key, JSON.stringify(valueToStore, bigNumberify.stringify));
     } catch (error) {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
@@ -30,7 +31,7 @@ const useLocalStorage = (key, initialValue) => {
     const handleStorageChange = (e) => {
       if (e.key === key) {
         try {
-          setStoredValue(e.newValue ? JSON.parse(e.newValue) : initialValue);
+          setStoredValue(e.newValue ? JSON.parse(e.newValue, bigNumberify) : initialValue);
         } catch (error) {
           console.error(`Error parsing localStorage change for key "${key}":`, error);
           setStoredValue(initialValue);
