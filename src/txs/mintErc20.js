@@ -3,6 +3,7 @@ import { notify } from '@/utils/web3';
 import { web3contracts } from '@/utils/web3config';
 
 export const getMintTx = ({ account, amount, chainId }) => {
+  notify({ type: 'pending', message: 'Building transaction..' });
   return {
     txType: 'mint',
     txData: {
@@ -17,7 +18,7 @@ export const getMintTx = ({ account, amount, chainId }) => {
 
 // Note: called from "src/contexts/transactions.jsx" via "handleTransactionResults()" located in "src/txs/index.js"
 export const handleMintTx = async ({ txState, eventArgs }) => {
-  const [ from, to, amount ] = eventArgs;
+  const [ from, to, amount ] = eventArgs.dbData;
 
   // TODO: Track TX Results in DB
   console.log('Mint Success!', { from, to, amount });
